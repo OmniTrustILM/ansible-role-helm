@@ -20,6 +20,10 @@
   changed_when: false
   when: not ansible_check_mode and helm_diff_plugin.rc != 0
 
+# set_fact stores the templated result as a string on ansible-core < 2.19
+# whatever the |int says, so every comparison below has to repeat the cast -
+# without it "helm_major >= 4" dies on 2.14 (Debian bookworm) with
+# "'>=' not supported between instances of 'AnsibleUnsafeText' and 'int'".
 - name: Determine the installed helm major
   ansible.builtin.set_fact:
     helm_major: "{{ helm_version_installed.stdout | regex_search('^v(\\d+)\\.', '\\1') | first | int }}"
@@ -37,7 +41,7 @@
     owner: root
     group: root
     mode: '0755'
-  when: not ansible_check_mode and helm_diff_plugin.rc != 0 and helm_major >= 4
+  when: not ansible_check_mode and helm_diff_plugin.rc != 0 and helm_major | int >= 4
 
 - name: Install helm diff release signing key
   ansible.builtin.get_url:
@@ -47,14 +51,14 @@
     owner: root
     group: root
     mode: '0644'
-  when: not ansible_check_mode and helm_diff_plugin.rc != 0 and helm_major >= 4
+  when: not ansible_check_mode and helm_diff_plugin.rc != 0 and helm_major | int >= 4
 
 # helm reads binary OpenPGP keyrings only, the released key is armoured.
 - name: Convert the helm diff signing key into a keyring
   ansible.builtin.command:
     cmd: gpg --dearmor --output /etc/helm/helm-diff-keyring.gpg /etc/helm/helm-diff-pubkey.asc
     creates: /etc/helm/helm-diff-keyring.gpg
-  when: not ansible_check_mode and helm_diff_plugin.rc != 0 and helm_major >= 4
+  when: not ansible_check_mode and helm_diff_plugin.rc != 0 and helm_major | int >= 4
 
 - name: Install helm diff
   ansible.builtin.command:
@@ -64,7 +68,7 @@
       --keyring /etc/helm/helm-diff-keyring.gpg
   register: output
   changed_when: output.rc == 0 # install fails when plugin is already installed
-  when: not ansible_check_mode and helm_diff_plugin.rc != 0 and helm_major >= 4
+  when: not ansible_check_mode and helm_diff_plugin.rc != 0 and helm_major | int >= 4
 
 # Helm 3 has no --keyring on "plugin install", and it recognises a URL as an
 # archive only when the server announces a gzip content type - a GitHub
@@ -79,4 +83,4 @@
       --version v{{ helm_diff_version }}
   register: output_helm3
   changed_when: output_helm3.rc == 0 # install fails when plugin is already installed
-  when: not ansible_check_mode and helm_diff_plugin.rc != 0 and helm_major < 4
+  when: not ansible_check_mode and helm_diff_plugin.rc != 0 and helm_major | int < 4
